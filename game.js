@@ -20,37 +20,56 @@ const rollBtn = document.getElementById('roll-btn');
 /* =========================================
    PeerJS Initialization (Multiplayer Logic)
    ========================================= */
-// Initialize PeerJS. Calling new Peer() connects to PeerJS's free cloud broker server 
-// just long enough to trade IP addresses with your friend.
-const peer = new Peer();
-let connection = null; // This will hold our active data connection
+let peer = null; // PeerJS instance
+let connection = null; // Active data connection
 
-// 1. When PeerJS successfully generates our ID
-peer.on('open', (id) => {
-    myIdDisplay.innerText = id;
-    console.log('My Peer ID is: ' + id);
-});
+// Guard: If PeerJS failed to load, disable multiplayer UI
+if (typeof Peer === 'undefined') {
+    connectionStatus.innerText = 'PeerJS not loaded. Multiplayer disabled.';
+    connectionStatus.style.color = '#ef5350';
+    connectBtn.disabled = true;
+    friendIdInput.disabled = true;
+} else {
+    peer = new Peer();
 
-// 2. When a friend connects to US (We are the host)
-peer.on('connection', (conn) => {
-    // If we are already connected to someone, reject new connections
-    if (connection) {
-        conn.close();
+    // 1. When PeerJS successfully generates our ID
+    peer.on('open', (id) => {
+        myIdDisplay.innerText = id;
+        console.log('My Peer ID is: ' + id);
+    });
+
+    // 2. When a friend connects to US (We are the host)
+    peer.on('connection', (conn) => {
+        // If we are already connected to someone, reject new connections
+        if (connection) {
+            conn.close();
+            return;
+        }
+        connection = conn;
+        setupConnectionHandlers();
+    });
+
+    peer.on('error', (err) => {
+        console.error('PeerJS error', err);
+        addChatMessage('System', 'PeerJS error: ' + (err && err.type ? err.type : err), 'system-msg');
+    });
+}
+
+// When WE click "Join Game" to connect to a friend
+connectBtn.addEventListener('click', () => {
+    if (!peer) {
+        alert('Multiplayer is not available (PeerJS failed to load).');
         return;
     }
-    connection = conn;
-    setupConnectionHandlers();
-});
 
-// 3. When WE click "Join Game" to connect to a friend
-connectBtn.addEventListener('click', () => {
     const friendId = friendIdInput.value.trim();
     if (!friendId) {
         alert("Please enter a friend's ID");
         return;
     }
-    
-    connectionStatus.innerText = "Connecting...";
+
+    connectionStatus.innerText = 'Connecting...';
+    connectionStatus.style.color = '#ffd54f';
     // Initiate connection to the friend's ID
     connection = peer.connect(friendId);
     setupConnectionHandlers();
@@ -60,42 +79,52 @@ connectBtn.addEventListener('click', () => {
    Connection Event Handlers
    ========================================= */
 function setupConnectionHandlers() {
+    if (!connection) return;
+
     // When the connection is successfully opened
     connection.on('open', () => {
-        connectionStatus.innerText = "Status: Connected! 🟢";
-        connectionStatus.style.color = "#69f0ae"; // Neon Green
-        
+        connectionStatus.innerText = 'Status: Connected! 🟢';
+        connectionStatus.style.color = '#69f0ae'; // Neon Green
+
         // Disable connection inputs, enable chat
         friendIdInput.disabled = true;
         connectBtn.disabled = true;
         chatInput.disabled = false;
         sendBtn.disabled = false;
-        rollBtn.disabled = false; // We'll use this later for the dice
+        if (rollBtn) rollBtn.disabled = false; // We'll use this later for the dice
 
-        addChatMessage("System", "Connection established! You can now chat.", "system-msg");
+        addChatMessage('System', 'Connection established! You can now chat.', 'system-msg');
     });
 
     // When we receive data (messages or game moves) from our friend
     connection.on('data', (data) => {
         // We will send data as objects: { type: 'chat', content: 'hello' }
-        if (data.type === 'chat') {
-            addChatMessage("Friend", data.content, "friend-msg");
+        try {
+            if (data && data.type === 'chat') {
+                addChatMessage('Friend', data.content, 'friend-msg');
+            }
+            // Later: handle game moves, dice, etc.
+        } catch (err) {
+            console.error('Error handling incoming data', err);
         }
-        // Later, we will add: if (data.type === 'move') { ... }
     });
 
     // When the friend disconnects or refreshes the page
     connection.on('close', () => {
-        connectionStatus.innerText = "Status: Disconnected 🔴";
-        connectionStatus.style.color = "#ef5350"; // Red
-        
+        connectionStatus.innerText = 'Status: Disconnected 🔴';
+        connectionStatus.style.color = '#ef5350'; // Red
+
         // Disable chat
         chatInput.disabled = true;
         sendBtn.disabled = true;
-        rollBtn.disabled = true;
-        
-        addChatMessage("System", "Your friend disconnected.", "system-msg");
+        if (rollBtn) rollBtn.disabled = true;
+
+        addChatMessage('System', 'Your friend disconnected.', 'system-msg');
         connection = null; // Reset connection
+
+        // Re-enable the ability to join as a host (peer.id remains)
+        friendIdInput.disabled = false;
+        connectBtn.disabled = false;
     });
 }
 
@@ -104,17 +133,24 @@ function setupConnectionHandlers() {
    ========================================= */
 function sendChatMessage() {
     const text = chatInput.value.trim();
-    if (text && connection && connection.open) {
-        // Send data to friend
+    if (!text) return;
+
+    // If we have a connection, send it
+    if (connection && connection.open) {
         connection.send({
             type: 'chat',
             content: text
         });
-        
+
         // Show message on our own screen
-        addChatMessage("You", text, "my-msg");
+        addChatMessage('You', text, 'my-msg');
         chatInput.value = ''; // Clear input
+        return;
     }
+
+    // No connection: just show locally as info
+    addChatMessage('You (local)', text, 'my-msg');
+    chatInput.value = '';
 }
 
 // Listen for Send button click
@@ -129,28 +165,37 @@ chatInput.addEventListener('keypress', (e) => {
 
 function addChatMessage(sender, text, cssClass) {
     const msgElement = document.createElement('p');
-    msgElement.className = cssClass; // Assign class for styling
-    
+    msgElement.className = cssClass || '';
+
     // Style the sender name differently based on who sent it
-    const senderColor = sender === "You" ? "#4fc3f7" : (sender === "Friend" ? "#ffca28" : "#888");
-    
-    msgElement.innerHTML = `<strong style="color: ${senderColor}">${sender}:</strong> ${text}`;
-    
+    const senderColor = sender === 'You' || sender.startsWith('You') ? '#4fc3f7' : (sender === 'Friend' ? '#ffca28' : '#888');
+
+    msgElement.innerHTML = `<strong style="color: ${senderColor}">${sender}:</strong> ${escapeHtml(text)}`;
+
     chatMessagesArea.appendChild(msgElement);
-    
+
     // Auto-scroll to the bottom of the chat
     chatMessagesArea.scrollTop = chatMessagesArea.scrollHeight;
 }
 
+// Small helper to avoid HTML injection in chat messages
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 /* =========================================
-  /* =========================================
    Ludo Board Configuration & Drawing
    ========================================= */
 
 // The Ludo board is mathematically a 15x15 grid.
 const GRID_SIZE = 15;
 // Calculate the size of a single tile based on the canvas width
-const TILE_SIZE = canvas.width / GRID_SIZE; 
+let TILE_SIZE = canvas.width / GRID_SIZE; 
 
 // Define standard Ludo colors
 const COLORS = {
@@ -163,6 +208,9 @@ const COLORS = {
 };
 
 function drawBoard() {
+    // Recalculate tile size in case canvas was resized
+    TILE_SIZE = canvas.width / GRID_SIZE;
+
     // 1. Clear the canvas with white background
     ctx.fillStyle = COLORS.WHITE;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -178,9 +226,9 @@ function drawBoard() {
 
     // 3. Draw the Four Colored Corner Bases
     // A base takes up a 6x6 grid area in the corners
-    drawBase(0, 0, COLORS.RED);             // Top Left
-    drawBase(9 * TILE_SIZE, 0, COLORS.GREEN); // Top Right
-    drawBase(0, 9 * TILE_SIZE, COLORS.BLUE);  // Bottom Left
+    drawBase(0, 0, COLORS.RED);                         // Top Left
+    drawBase(9 * TILE_SIZE, 0, COLORS.GREEN);           // Top Right
+    drawBase(0, 9 * TILE_SIZE, COLORS.BLUE);            // Bottom Left
     drawBase(9 * TILE_SIZE, 9 * TILE_SIZE, COLORS.YELLOW); // Bottom Right
 
     // 4. Draw the Home Triangle (Center 3x3 area)
@@ -315,12 +363,12 @@ function drawSafeZones() {
 }
 
 // Call the function to draw the board immediately when the page loads
+// Ensure the canvas has an explicit width/height set in HTML – if you change it dynamically, call drawBoard() after resizing.
 drawBoard();
-   ========================================= */
-// Draw a temporary message on the canvas so you know it's working
-ctx.fillStyle = "#1e1e24";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-ctx.fillStyle = "#ffffff";
-ctx.font = "20px sans-serif";
-ctx.textAlign = "center";
-ctx.fillText("Board Loading...", canvas.width/2, canvas.height/2);
+
+// Optional: redraw when window resizes (keeps tile size consistent if canvas width changes)
+window.addEventListener('resize', () => {
+    // If you make the canvas responsive, update its width/height here and call drawBoard().
+    // For now we only recalculate TILE_SIZE in drawBoard(), so call it to refresh drawing.
+    drawBoard();
+});
