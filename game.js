@@ -6,6 +6,8 @@ const myIdDisplay = document.getElementById('my-id');
 const friendIdInput = document.getElementById('friend-id');
 const connectBtn = document.getElementById('connect-btn');
 const connectionStatus = document.getElementById('connection-status');
+const copyIdBtn = document.getElementById('copy-id');
+const disconnectBtn = document.getElementById('disconnect-btn');
 
 // Chat UI
 const chatInput = document.getElementById('chat-input');
@@ -14,28 +16,36 @@ const chatMessagesArea = document.getElementById('chat-messages');
 
 // Game UI (Canvas)
 const canvas = document.getElementById('ludo-board');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext && canvas.getContext('2d');
 const rollBtn = document.getElementById('roll-btn');
+const diceDisplay = document.getElementById('dice-display');
 
 /* =========================================
    PeerJS Initialization (Multiplayer Logic)
    ========================================= */
 let peer = null; // PeerJS instance
 let connection = null; // Active data connection
+let lastFriendId = null; // Keep the last friend ID we connected to (for reconnects)
 
 // Guard: If PeerJS failed to load, disable multiplayer UI
-if (typeof Peer === 'undefined') {
-    connectionStatus.innerText = 'PeerJS not loaded. Multiplayer disabled.';
+function disableMultiplayerUI(reason) {
+    connectionStatus.innerText = reason || 'Multiplayer unavailable.';
     connectionStatus.style.color = '#ef5350';
     connectBtn.disabled = true;
     friendIdInput.disabled = true;
+    if (copyIdBtn) copyIdBtn.disabled = true;
+}
+
+if (typeof Peer === 'undefined') {
+    disableMultiplayerUI('PeerJS not loaded. Multiplayer disabled.');
 } else {
     peer = new Peer();
 
     // 1. When PeerJS successfully generates our ID
     peer.on('open', (id) => {
-        myIdDisplay.innerText = id;
+        myIdDisplay.innerText = id || 'n/a';
         console.log('My Peer ID is: ' + id);
+        if (copyIdBtn) copyIdBtn.disabled = false;
     });
 
     // 2. When a friend connects to US (We are the host)
@@ -46,6 +56,7 @@ if (typeof Peer === 'undefined') {
             return;
         }
         connection = conn;
+        lastFriendId = conn.peer;
         setupConnectionHandlers();
     });
 
@@ -68,11 +79,17 @@ connectBtn.addEventListener('click', () => {
         return;
     }
 
+    lastFriendId = friendId;
     connectionStatus.innerText = 'Connecting...';
     connectionStatus.style.color = '#ffd54f';
     // Initiate connection to the friend's ID
-    connection = peer.connect(friendId);
-    setupConnectionHandlers();
+    try {
+        connection = peer.connect(friendId);
+        setupConnectionHandlers();
+    } catch (err) {
+        console.error('Connection error', err);
+        addChatMessage('System', 'Connection error: ' + err, 'system-msg');
+    }
 });
 
 /* =========================================
@@ -92,6 +109,7 @@ function setupConnectionHandlers() {
         chatInput.disabled = false;
         sendBtn.disabled = false;
         if (rollBtn) rollBtn.disabled = false; // We'll use this later for the dice
+        if (disconnectBtn) disconnectBtn.disabled = false;
 
         addChatMessage('System', 'Connection established! You can now chat.', 'system-msg');
     });
@@ -100,10 +118,11 @@ function setupConnectionHandlers() {
     connection.on('data', (data) => {
         // We will send data as objects: { type: 'chat', content: 'hello' }
         try {
-            if (data && data.type === 'chat') {
+            if (!data) return;
+            if (data.type === 'chat') {
                 addChatMessage('Friend', data.content, 'friend-msg');
             }
-            // Later: handle game moves, dice, etc.
+            // dice and moves will be handled in a later commit
         } catch (err) {
             console.error('Error handling incoming data', err);
         }
@@ -118,11 +137,12 @@ function setupConnectionHandlers() {
         chatInput.disabled = true;
         sendBtn.disabled = true;
         if (rollBtn) rollBtn.disabled = true;
+        if (disconnectBtn) disconnectBtn.disabled = true;
 
         addChatMessage('System', 'Your friend disconnected.', 'system-msg');
         connection = null; // Reset connection
 
-        // Re-enable the ability to join as a host (peer.id remains)
+        // Re-enable the ability to join or create a new connection
         friendIdInput.disabled = false;
         connectBtn.disabled = false;
     });
@@ -170,7 +190,7 @@ function addChatMessage(sender, text, cssClass) {
     // Style the sender name differently based on who sent it
     const senderColor = sender === 'You' || sender.startsWith('You') ? '#4fc3f7' : (sender === 'Friend' ? '#ffca28' : '#888');
 
-    msgElement.innerHTML = `<strong style="color: ${senderColor}">${sender}:</strong> ${escapeHtml(text)}`;
+    msgElement.innerHTML = `<strong style="color: ${senderColor}">${sender}:</strong> ${escapeHtml(String(text))}`;
 
     chatMessagesArea.appendChild(msgElement);
 
@@ -184,18 +204,16 @@ function escapeHtml(unsafe) {
          .replace(/&/g, "&amp;")
          .replace(/</g, "&lt;")
          .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
+         .replace(/\"/g, "&quot;")
          .replace(/'/g, "&#039;");
 }
 
 /* =========================================
-   Ludo Board Configuration & Drawing
+   Responsive Canvas & Drawing
    ========================================= */
-
-// The Ludo board is mathematically a 15x15 grid.
+// The Ludo board is a 15x15 grid.
 const GRID_SIZE = 15;
-// Calculate the size of a single tile based on the canvas width
-let TILE_SIZE = canvas.width / GRID_SIZE; 
+let TILE_SIZE = 0; // calculated per-draw
 
 // Define standard Ludo colors
 const COLORS = {
@@ -207,13 +225,40 @@ const COLORS = {
     BORDER: '#121212'
 };
 
+// Make canvas crisp on HiDPI displays and responsive to its container
+function fitCanvasToContainer() {
+    if (!canvas || !canvas.parentElement || !ctx) return;
+
+    // Make canvas width 100% of its container via CSS and then set internal pixel size
+    const dpr = window.devicePixelRatio || 1;
+    // Use parent width to determine the available space. Keep the canvas square.
+    const parent = canvas.parentElement;
+    const availableWidth = Math.min(parent.clientWidth - 30, window.innerHeight - 200) || parent.clientWidth;
+
+    // Set CSS display size first
+    canvas.style.width = availableWidth + 'px';
+    canvas.style.height = availableWidth + 'px';
+
+    // Set actual pixel size for high-DPI
+    canvas.width = Math.round(availableWidth * dpr);
+    canvas.height = Math.round(availableWidth * dpr);
+
+    // Scale context so drawing operations are in CSS pixels
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Recalculate tile size
+    TILE_SIZE = (availableWidth) / GRID_SIZE;
+}
+
 function drawBoard() {
-    // Recalculate tile size in case canvas was resized
-    TILE_SIZE = canvas.width / GRID_SIZE;
+    if (!ctx || !canvas) return;
+
+    // Ensure canvas fits container and TILE_SIZE is up-to-date
+    fitCanvasToContainer();
 
     // 1. Clear the canvas with white background
     ctx.fillStyle = COLORS.WHITE;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
     // 2. Draw the 15x15 Grid for the pathways
     ctx.strokeStyle = COLORS.BORDER;
@@ -225,36 +270,27 @@ function drawBoard() {
     }
 
     // 3. Draw the Four Colored Corner Bases
-    // A base takes up a 6x6 grid area in the corners
     drawBase(0, 0, COLORS.RED);                         // Top Left
     drawBase(9 * TILE_SIZE, 0, COLORS.GREEN);           // Top Right
     drawBase(0, 9 * TILE_SIZE, COLORS.BLUE);            // Bottom Left
     drawBase(9 * TILE_SIZE, 9 * TILE_SIZE, COLORS.YELLOW); // Bottom Right
 
-    // 4. Draw the Home Triangle (Center 3x3 area)
     drawHomeCenter();
-
-    // 5. Fill the Colored Home Columns (The path leading to the center)
     fillHomeColumns();
-
-    // 6. Draw Safe Zone / Starting Tile colors
     drawSafeZones();
 }
 
 function drawBase(x, y, color) {
-    // The main colored square
     ctx.fillStyle = color;
     ctx.fillRect(x, y, 6 * TILE_SIZE, 6 * TILE_SIZE);
-    
-    // The inner white square where pawns sit before rolling a 6
+
     ctx.fillStyle = COLORS.WHITE;
     ctx.fillRect(x + TILE_SIZE, y + TILE_SIZE, 4 * TILE_SIZE, 4 * TILE_SIZE);
     ctx.strokeRect(x + TILE_SIZE, y + TILE_SIZE, 4 * TILE_SIZE, 4 * TILE_SIZE);
 
-    // Draw 4 circle placeholders for pawns inside the base
     const offset = 1.5 * TILE_SIZE;
     const padding = 2 * TILE_SIZE;
-    
+
     drawPawnPlaceholder(x + offset, y + offset, color);
     drawPawnPlaceholder(x + offset + padding, y + offset, color);
     drawPawnPlaceholder(x + offset, y + offset + padding, color);
@@ -274,7 +310,6 @@ function drawHomeCenter() {
     const cy = 7.5 * TILE_SIZE;
     const offset = 1.5 * TILE_SIZE;
 
-    // Red Triangle (Left)
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx - offset, cy - offset);
@@ -283,7 +318,6 @@ function drawHomeCenter() {
     ctx.fill();
     ctx.stroke();
 
-    // Green Triangle (Top)
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx - offset, cy - offset);
@@ -292,7 +326,6 @@ function drawHomeCenter() {
     ctx.fill();
     ctx.stroke();
 
-    // Yellow Triangle (Right)
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + offset, cy - offset);
@@ -301,7 +334,6 @@ function drawHomeCenter() {
     ctx.fill();
     ctx.stroke();
 
-    // Blue Triangle (Bottom)
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx - offset, cy + offset);
@@ -312,28 +344,24 @@ function drawHomeCenter() {
 }
 
 function fillHomeColumns() {
-    // Red column (Left middle, moving right)
     ctx.fillStyle = COLORS.RED;
     for (let i = 1; i <= 5; i++) {
         ctx.fillRect(i * TILE_SIZE, 7 * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         ctx.strokeRect(i * TILE_SIZE, 7 * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     }
 
-    // Green column (Top middle, moving down)
     ctx.fillStyle = COLORS.GREEN;
     for (let i = 1; i <= 5; i++) {
         ctx.fillRect(7 * TILE_SIZE, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         ctx.strokeRect(7 * TILE_SIZE, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     }
 
-    // Yellow column (Right middle, moving left)
     ctx.fillStyle = COLORS.YELLOW;
     for (let i = 9; i <= 13; i++) {
         ctx.fillRect(i * TILE_SIZE, 7 * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         ctx.strokeRect(i * TILE_SIZE, 7 * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     }
 
-    // Blue column (Bottom middle, moving up)
     ctx.fillStyle = COLORS.BLUE;
     for (let i = 9; i <= 13; i++) {
         ctx.fillRect(7 * TILE_SIZE, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -342,33 +370,88 @@ function fillHomeColumns() {
 }
 
 function drawSafeZones() {
-    // Helper function to color a specific tile
     const colorTile = (x, y, color) => {
         ctx.fillStyle = color;
         ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     };
 
-    // Starting squares (where a pawn lands after a 6)
     colorTile(1, 6, COLORS.RED);
     colorTile(8, 1, COLORS.GREEN);
     colorTile(13, 8, COLORS.YELLOW);
     colorTile(6, 13, COLORS.BLUE);
 
-    // Star/Safe tiles (Usually gray or distinct in physical boards, we'll use a lighter shade of the color)
-    colorTile(2, 8, '#ff8a80'); // Red safe
-    colorTile(6, 2, '#69f0ae'); // Green safe
-    colorTile(12, 6, '#ffe57f'); // Yellow safe
-    colorTile(8, 12, '#82b1ff'); // Blue safe
+    colorTile(2, 8, '#ff8a80');
+    colorTile(6, 2, '#69f0ae');
+    colorTile(12, 6, '#ffe57f');
+    colorTile(8, 12, '#82b1ff');
 }
 
-// Call the function to draw the board immediately when the page loads
-// Ensure the canvas has an explicit width/height set in HTML – if you change it dynamically, call drawBoard() after resizing.
-drawBoard();
-
-// Optional: redraw when window resizes (keeps tile size consistent if canvas width changes)
-window.addEventListener('resize', () => {
-    // If you make the canvas responsive, update its width/height here and call drawBoard().
-    // For now we only recalculate TILE_SIZE in drawBoard(), so call it to refresh drawing.
+// Initial draw
+if (ctx) {
     drawBoard();
+} else {
+    console.warn('Canvas 2D context not available.');
+}
+
+// Redraw on resize with debounce
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        drawBoard();
+    }, 150);
 });
+
+/* =========================================
+   UI Helpers: Copy ID & Disconnect
+   ========================================= */
+if (copyIdBtn) {
+    copyIdBtn.addEventListener('click', async () => {
+        const id = myIdDisplay.innerText || '';
+        if (!id || id === 'Generating...' || id === 'n/a') {
+            addChatMessage('System', 'No Room ID available to copy yet.', 'system-msg');
+            return;
+        }
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(id);
+            } else {
+                // Fallback
+                const tmp = document.createElement('textarea');
+                tmp.value = id;
+                document.body.appendChild(tmp);
+                tmp.select();
+                document.execCommand('copy');
+                document.body.removeChild(tmp);
+            }
+            addChatMessage('System', 'Room ID copied to clipboard.', 'system-msg');
+        } catch (err) {
+            console.error('Copy failed', err);
+            addChatMessage('System', 'Failed to copy Room ID.', 'system-msg');
+        }
+    });
+}
+
+if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', () => {
+        try {
+            if (connection) {
+                connection.close();
+                connection = null;
+            }
+            // Do not destroy peer here to allow getting a new connection; if you want a fresh ID use peer.destroy()
+            friendIdInput.disabled = false;
+            connectBtn.disabled = false;
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+            if (rollBtn) rollBtn.disabled = true;
+            disconnectBtn.disabled = true;
+            connectionStatus.innerText = 'Status: Disconnected';
+            connectionStatus.style.color = '#aaa';
+            addChatMessage('System', 'Disconnected from peer.', 'system-msg');
+        } catch (err) {
+            console.error('Error during disconnect', err);
+        }
+    });
+}

@@ -86,6 +86,13 @@ body {
     margin-left: 8px;
 }
 
+/* New small buttons next to ID */
+.my-id-box button {
+    margin-left: 8px;
+    padding: 6px 10px;
+    font-size: 0.9em;
+}
+
 input[type="text"] {
     padding: 10px;
     border: 1px solid #3d3d4e;
@@ -141,12 +148,16 @@ button:disabled {
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 100%;
 }
 
 #ludo-board {
     background-color: #ffffff;
     border: 3px solid #121212;
     border-radius: 8px;
+    max-width: 100%;
+    height: auto; /* allow JS to control exact pixel size */
+    display: block;
 }
 
 /* =========================================
