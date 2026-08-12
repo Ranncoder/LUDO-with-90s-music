@@ -25,6 +25,8 @@
                 <div class="p2p-controls">
                     <div class="my-id-box">
                         Your Room ID: <strong id="my-id">Generating...</strong>
+                        <button id="copy-id" title="Copy Room ID">Copy</button>
+                        <button id="disconnect-btn" title="Disconnect" disabled>Disconnect</button>
                     </div>
                     <div class="join-box">
                         <input type="text" id="friend-id" placeholder="Enter Friend's ID">
@@ -32,11 +34,12 @@
                     </div>
                     <span id="connection-status">Status: Waiting for connection...</span>
                 </div>
+                <div class="connection-hint">Tip: Open this page in two browsers; one will act as host (share your Room ID).</div>
             </div>
 
             <!-- The Ludo Board Canvas -->
             <div class="board-container">
-                <!-- We use Canvas because drawing and moving pieces is much easier here than with normal HTML elements -->
+                <!-- The canvas is responsive via CSS and resized in JS -->
                 <canvas id="ludo-board" width="600" height="600">
                     Your browser does not support the HTML5 canvas tag.
                 </canvas>
@@ -56,9 +59,7 @@
             <!-- YouTube Music Player -->
             <div class="music-player">
                 <h3>🎵 Indian Hits Radio</h3>
-                <!-- The iframe is visible to comply with YouTube's rules. 
-                     list=... is a generic Bollywood playlist ID. 
-                     enablejsapi=1 allows us to control it via game.js later. -->
+                <!-- The iframe is visible to comply with YouTube's rules. -->
                 <iframe 
                     id="yt-player"
                     width="100%" 
