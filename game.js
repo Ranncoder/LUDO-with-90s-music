@@ -26,6 +26,7 @@ const diceDisplay = document.getElementById('dice-display');
 let peer = null; // PeerJS instance
 let connection = null; // Active data connection
 let lastFriendId = null; // Keep the last friend ID we connected to (for reconnects)
+let seenNonces = new Set(); // to dedupe incoming events
 
 // Guard: If PeerJS failed to load, disable multiplayer UI
 function disableMultiplayerUI(reason) {
@@ -62,7 +63,7 @@ if (typeof Peer === 'undefined') {
 
     peer.on('error', (err) => {
         console.error('PeerJS error', err);
-        addChatMessage('System', 'PeerJS error: ' + (err && err.type ? err.type : err), 'system-msg');
+        addChatMessage('System', 'PeerJS error: ' + (err && err.type ? err.type : String(err)), 'system-msg');
     });
 }
 
@@ -108,21 +109,52 @@ function setupConnectionHandlers() {
         connectBtn.disabled = true;
         chatInput.disabled = false;
         sendBtn.disabled = false;
-        if (rollBtn) rollBtn.disabled = false; // We'll use this later for the dice
+        if (rollBtn) rollBtn.disabled = false; // We'll use this for the dice
         if (disconnectBtn) disconnectBtn.disabled = false;
 
-        addChatMessage('System', 'Connection established! You can now chat.', 'system-msg');
+        addChatMessage('System', 'Connection established! You can now chat and roll the dice.', 'system-msg');
+    });
+
+    connection.on('error', (err) => {
+        console.error('Connection error', err);
+        addChatMessage('System', 'Connection error: ' + String(err), 'system-msg');
     });
 
     // When we receive data (messages or game moves) from our friend
     connection.on('data', (data) => {
-        // We will send data as objects: { type: 'chat', content: 'hello' }
         try {
             if (!data) return;
+
             if (data.type === 'chat') {
                 addChatMessage('Friend', data.content, 'friend-msg');
+                return;
             }
-            // dice and moves will be handled in a later commit
+
+            if (data.type === 'dice') {
+                // Deduplicate by nonce
+                if (!data.nonce) return;
+                if (seenNonces.has(data.nonce)) return;
+                seenNonces.add(data.nonce);
+
+                // Display friend's dice
+                addChatMessage('System', `Friend rolled: ${data.value}`, 'system-msg');
+                // Show briefly in dice display
+                if (diceDisplay) {
+                    diceDisplay.innerText = `Friend: ${data.value}`;
+                    setTimeout(() => { diceDisplay.innerText = 'Waiting...'; }, 2500);
+                }
+                return;
+            }
+
+            if (data.type === 'move') {
+                // Placeholder for future move handling
+                if (!data.nonce) return;
+                if (seenNonces.has(data.nonce)) return;
+                seenNonces.add(data.nonce);
+                addChatMessage('System', `Friend moved piece (${data.detail || 'details'})`, 'system-msg');
+                return;
+            }
+
         } catch (err) {
             console.error('Error handling incoming data', err);
         }
@@ -139,13 +171,43 @@ function setupConnectionHandlers() {
         if (rollBtn) rollBtn.disabled = true;
         if (disconnectBtn) disconnectBtn.disabled = true;
 
-        addChatMessage('System', 'Your friend disconnected.', 'system-msg');
+        addChatMessage('System', 'Your friend disconnected. Attempting reconnect...', 'system-msg');
         connection = null; // Reset connection
 
-        // Re-enable the ability to join or create a new connection
+        // Try to reconnect automatically (lightweight)
+        if (lastFriendId) {
+            attemptReconnect(0);
+        }
+
+        // Re-enable the ability to join or create a new connection manually
         friendIdInput.disabled = false;
         connectBtn.disabled = false;
     });
+}
+
+/* =========================================
+   Reconnection Logic
+   ========================================= */
+function attemptReconnect(attempt) {
+    const maxAttempts = 5;
+    if (attempt >= maxAttempts) {
+        addChatMessage('System', 'Reconnect failed after multiple attempts. Please reconnect manually.', 'system-msg');
+        return;
+    }
+
+    const delay = Math.min(2000 * Math.pow(2, attempt), 30000); // exponential backoff up to 30s
+    addChatMessage('System', `Reconnect attempt ${attempt + 1} in ${Math.round(delay/1000)}s...`, 'system-msg');
+
+    setTimeout(() => {
+        if (!peer || !lastFriendId) return;
+        try {
+            connection = peer.connect(lastFriendId);
+            setupConnectionHandlers();
+        } catch (err) {
+            console.error('Reconnect attempt failed', err);
+            attemptReconnect(attempt + 1);
+        }
+    }, delay);
 }
 
 /* =========================================
@@ -209,7 +271,58 @@ function escapeHtml(unsafe) {
 }
 
 /* =========================================
-   Responsive Canvas & Drawing
+   Dice & Move Sync Logic
+   ========================================= */
+function generateNonce() {
+    return Date.now() + '-' + Math.random().toString(36).slice(2,8);
+}
+
+if (rollBtn) {
+    rollBtn.addEventListener('click', async () => {
+        if (rollBtn.disabled) return;
+        rollBtn.disabled = true;
+        if (diceDisplay) diceDisplay.innerText = 'Rolling...';
+
+        // simple roll animation delay
+        await new Promise(res => setTimeout(res, 700));
+        const value = Math.floor(Math.random() * 6) + 1;
+
+        if (diceDisplay) diceDisplay.innerText = value;
+        addChatMessage('System', `You rolled: ${value}`, 'system-msg');
+
+        // send dice event to peer
+        const nonce = generateNonce();
+        seenNonces.add(nonce); // mark our own nonce so we don't process it when it bounces
+        if (connection && connection.open) {
+            try {
+                connection.send({ type: 'dice', value, nonce });
+            } catch (err) {
+                console.error('Failed to send dice event', err);
+            }
+        }
+
+        // re-enable after short cooldown
+        setTimeout(() => { if (rollBtn) rollBtn.disabled = false; }, 800);
+    });
+}
+
+/* =========================================
+   Move Event Skeleton (for future use)
+   ========================================= */
+function sendMove(detail) {
+    const nonce = generateNonce();
+    seenNonces.add(nonce);
+    if (connection && connection.open) {
+        try {
+            connection.send({ type: 'move', detail, nonce });
+        } catch (err) {
+            console.error('Failed to send move', err);
+        }
+    }
+}
+
+/* =========================================
+   Responsive Canvas & Drawing (already implemented)
    ========================================= */
 // The Ludo board is a 15x15 grid.
 const GRID_SIZE = 15;
@@ -229,38 +342,27 @@ const COLORS = {
 function fitCanvasToContainer() {
     if (!canvas || !canvas.parentElement || !ctx) return;
 
-    // Make canvas width 100% of its container via CSS and then set internal pixel size
     const dpr = window.devicePixelRatio || 1;
-    // Use parent width to determine the available space. Keep the canvas square.
     const parent = canvas.parentElement;
     const availableWidth = Math.min(parent.clientWidth - 30, window.innerHeight - 200) || parent.clientWidth;
 
-    // Set CSS display size first
     canvas.style.width = availableWidth + 'px';
     canvas.style.height = availableWidth + 'px';
 
-    // Set actual pixel size for high-DPI
     canvas.width = Math.round(availableWidth * dpr);
     canvas.height = Math.round(availableWidth * dpr);
 
-    // Scale context so drawing operations are in CSS pixels
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Recalculate tile size
     TILE_SIZE = (availableWidth) / GRID_SIZE;
 }
 
 function drawBoard() {
     if (!ctx || !canvas) return;
-
-    // Ensure canvas fits container and TILE_SIZE is up-to-date
     fitCanvasToContainer();
 
-    // 1. Clear the canvas with white background
     ctx.fillStyle = COLORS.WHITE;
     ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
-    // 2. Draw the 15x15 Grid for the pathways
     ctx.strokeStyle = COLORS.BORDER;
     ctx.lineWidth = 1;
     for (let x = 0; x < GRID_SIZE; x++) {
@@ -269,11 +371,10 @@ function drawBoard() {
         }
     }
 
-    // 3. Draw the Four Colored Corner Bases
-    drawBase(0, 0, COLORS.RED);                         // Top Left
-    drawBase(9 * TILE_SIZE, 0, COLORS.GREEN);           // Top Right
-    drawBase(0, 9 * TILE_SIZE, COLORS.BLUE);            // Bottom Left
-    drawBase(9 * TILE_SIZE, 9 * TILE_SIZE, COLORS.YELLOW); // Bottom Right
+    drawBase(0, 0, COLORS.RED);
+    drawBase(9 * TILE_SIZE, 0, COLORS.GREEN);
+    drawBase(0, 9 * TILE_SIZE, COLORS.BLUE);
+    drawBase(9 * TILE_SIZE, 9 * TILE_SIZE, COLORS.YELLOW);
 
     drawHomeCenter();
     fillHomeColumns();
@@ -402,56 +503,3 @@ window.addEventListener('resize', () => {
         drawBoard();
     }, 150);
 });
-
-/* =========================================
-   UI Helpers: Copy ID & Disconnect
-   ========================================= */
-if (copyIdBtn) {
-    copyIdBtn.addEventListener('click', async () => {
-        const id = myIdDisplay.innerText || '';
-        if (!id || id === 'Generating...' || id === 'n/a') {
-            addChatMessage('System', 'No Room ID available to copy yet.', 'system-msg');
-            return;
-        }
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(id);
-            } else {
-                // Fallback
-                const tmp = document.createElement('textarea');
-                tmp.value = id;
-                document.body.appendChild(tmp);
-                tmp.select();
-                document.execCommand('copy');
-                document.body.removeChild(tmp);
-            }
-            addChatMessage('System', 'Room ID copied to clipboard.', 'system-msg');
-        } catch (err) {
-            console.error('Copy failed', err);
-            addChatMessage('System', 'Failed to copy Room ID.', 'system-msg');
-        }
-    });
-}
-
-if (disconnectBtn) {
-    disconnectBtn.addEventListener('click', () => {
-        try {
-            if (connection) {
-                connection.close();
-                connection = null;
-            }
-            // Do not destroy peer here to allow getting a new connection; if you want a fresh ID use peer.destroy()
-            friendIdInput.disabled = false;
-            connectBtn.disabled = false;
-            chatInput.disabled = true;
-            sendBtn.disabled = true;
-            if (rollBtn) rollBtn.disabled = true;
-            disconnectBtn.disabled = true;
-            connectionStatus.innerText = 'Status: Disconnected';
-            connectionStatus.style.color = '#aaa';
-            addChatMessage('System', 'Disconnected from peer.', 'system-msg');
-        } catch (err) {
-            console.error('Error during disconnect', err);
-        }
-    });
-}
