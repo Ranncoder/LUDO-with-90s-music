@@ -1,0 +1,286 @@
+/* =========================================
+   Global Reset & Theme
+   ========================================= */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: #121212; /* Deep dark background */
+    color: #ffffff;
+    height: 100vh;
+    overflow: hidden; /* Prevents whole-page scrolling on desktop */
+}
+
+/* =========================================
+   Main Layout Structure
+   ========================================= */
+.app-container {
+    display: flex;
+    height: 100vh;
+    padding: 20px;
+    gap: 20px;
+}
+
+/* LEFT SIDE: Game Area */
+.game-area {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #1e1e24;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+}
+
+/* RIGHT SIDE: Music & Chat */
+.side-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 320px;
+    max-width: 400px;
+}
+
+/* =========================================
+   Multiplayer Connection Panel
+   ========================================= */
+.connection-panel {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.connection-panel h2 {
+    color: #ffca28; /* Ludo Yellow */
+    margin-bottom: 15px;
+    font-size: 2em;
+    letter-spacing: 1px;
+}
+
+.p2p-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.my-id-box, .join-box {
+    background: #2a2a35;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: 1px solid #3d3d4e;
+}
+
+#my-id {
+    color: #69f0ae; /* Neon Green */
+    font-family: monospace;
+    font-size: 1.2em;
+    margin-left: 8px;
+}
+
+input[type="text"] {
+    padding: 10px;
+    border: 1px solid #3d3d4e;
+    border-radius: 6px;
+    background: #121212;
+    color: white;
+    outline: none;
+}
+
+input[type="text"]:focus {
+    border-color: #4fc3f7; /* Ludo Blue */
+}
+
+button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 6px;
+    background: #4fc3f7; /* Ludo Blue */
+    color: #121212;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+    background: #29b6f6;
+    transform: translateY(-2px);
+}
+
+button:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#connection-status {
+    width: 100%;
+    display: block;
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+/* =========================================
+   Ludo Board Canvas
+   ========================================= */
+.board-container {
+    background-color: white; /* The canvas background needs to be white to draw Ludo easily */
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#ludo-board {
+    background-color: #ffffff;
+    border: 3px solid #121212;
+    border-radius: 8px;
+}
+
+/* =========================================
+   Dice Controls
+   ========================================= */
+.dice-container {
+    margin-top: 25px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+#roll-btn {
+    background: #ef5350; /* Ludo Red */
+    color: white;
+    font-size: 1.2em;
+    padding: 12px 30px;
+    border-radius: 30px;
+}
+
+#roll-btn:hover:not(:disabled) {
+    background: #e53935;
+}
+
+#dice-display {
+    font-size: 1.5em;
+    font-weight: bold;
+    background: #2a2a35;
+    padding: 10px 25px;
+    border-radius: 8px;
+    border: 2px solid #3d3d4e;
+}
+
+/* =========================================
+   Music Player
+   ========================================= */
+.music-player {
+    background: #1e1e24;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.music-player h3 {
+    margin-bottom: 15px;
+    color: #ffca28;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+iframe {
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* =========================================
+   Chat Box
+   ========================================= */
+.chat-box {
+    flex: 1;
+    background: #1e1e24;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.chat-box h3 {
+    margin-bottom: 15px;
+    color: #4fc3f7;
+}
+
+.messages-area {
+    flex: 1;
+    background: #121212;
+    border-radius: 8px;
+    padding: 15px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.system-msg {
+    color: #888;
+    font-size: 0.85em;
+    text-align: center;
+    margin: 5px 0;
+}
+
+/* Chat Input Controls */
+.chat-input-area {
+    display: flex;
+    gap: 10px;
+}
+
+.chat-input-area input {
+    flex: 1;
+    padding: 12px;
+}
+
+.chat-input-area button {
+    background: #69f0ae; /* Neon Green */
+}
+
+.chat-input-area button:hover:not(:disabled) {
+    background: #00e676;
+}
+
+/* =========================================
+   Mobile Responsiveness
+   ========================================= */
+@media (max-width: 1024px) {
+    .app-container {
+        flex-direction: column;
+        height: auto;
+        overflow-y: auto; /* Allow scrolling on small screens */
+    }
+    
+    body {
+        overflow-y: auto;
+    }
+
+    .side-panel {
+        max-width: 100%;
+        min-width: unset;
+    }
+    
+    #ludo-board {
+        max-width: 100%; /* Ensures the canvas shrinks on mobile */
+        height: auto;
+    }
+}

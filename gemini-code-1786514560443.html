@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ludo & Chill | Play and Listen</title>
+    
+    <!-- Link to our stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- PeerJS for serverless multiplayer (GitHub Pages compatible) -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    
+    <!-- Main Wrapper -->
+    <div class="app-container">
+        
+        <!-- LEFT SIDE: The Game Area -->
+        <div class="game-area">
+            
+            <!-- Multiplayer Connection Panel -->
+            <div class="connection-panel">
+                <h2>🎲 Ludo & Chill</h2>
+                <div class="p2p-controls">
+                    <div class="my-id-box">
+                        Your Room ID: <strong id="my-id">Generating...</strong>
+                    </div>
+                    <div class="join-box">
+                        <input type="text" id="friend-id" placeholder="Enter Friend's ID">
+                        <button id="connect-btn">Join Game</button>
+                    </div>
+                    <span id="connection-status">Status: Waiting for connection...</span>
+                </div>
+            </div>
+
+            <!-- The Ludo Board Canvas -->
+            <div class="board-container">
+                <!-- We use Canvas because drawing and moving pieces is much easier here than with normal HTML elements -->
+                <canvas id="ludo-board" width="600" height="600">
+                    Your browser does not support the HTML5 canvas tag.
+                </canvas>
+            </div>
+
+            <!-- Dice Controls -->
+            <div class="dice-container">
+                <button id="roll-btn" disabled>Roll Dice</button>
+                <div id="dice-display">Waiting...</div>
+            </div>
+            
+        </div>
+
+        <!-- RIGHT SIDE: Chat & Music Panel -->
+        <div class="side-panel">
+            
+            <!-- YouTube Music Player -->
+            <div class="music-player">
+                <h3>🎵 Indian Hits Radio</h3>
+                <!-- The iframe is visible to comply with YouTube's rules. 
+                     list=... is a generic Bollywood playlist ID. 
+                     enablejsapi=1 allows us to control it via game.js later. -->
+                <iframe 
+                    id="yt-player"
+                    width="100%" 
+                    height="250" 
+                    src="https://www.youtube.com/embed/videoseries?list=PLc4jR_B67R2_Hq2Bf9mF5B24E7gMnbz4k&enablejsapi=1" 
+                    title="YouTube Music Player" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            </div>
+
+            <!-- Multiplayer Chat Box -->
+            <div class="chat-box">
+                <h3>💬 Room Chat</h3>
+                <div id="chat-messages" class="messages-area">
+                    <p class="system-msg">Welcome! Send your Room ID to a friend to start.</p>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message..." disabled>
+                    <button id="send-btn" disabled>Send</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Link to our game logic and PeerJS connection code -->
+    <script src="game.js"></script>
+</body>
+</html>
